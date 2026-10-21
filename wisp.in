@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# -*- wisp -*-
-# set Guile if unset
-if [ -z ${GUILE+x} ]; then
-	GUILE=guile
-fi
-# ensure that wisp is compiled
-"${GUILE}" -c '(import (language wisp))' >/dev/null 2>&1
-exec -a "$0" "${GUILE}" -x .w --language=wisp "$@"

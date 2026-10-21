@@ -1,0 +1,239 @@
+#+PINNED_THEME: code
+* Wisp: Whitespace to Lisp
+:PROPERTIES:
+:CUSTOM_ID: wisp-whitespace-to-lisp
+:END:
+#+begin_example
+define : hello                    (define (hello)
+  display "Hello World"     ⇒        (display "Hello World"))
+#+end_example
+
+#+begin_example
+define : fibonacci n                 (define (fibonacci n)
+    let rek : (i 0) (u 1) (v 1)          (let rek ((i 0) (u 1) (v 1))
+         if : >= i {n - 2}         ⇒          (if (>= i (- n 2))
+            . v                                    v
+            rek {i + 1} v {u + v}                 (rek (+ i 1) v (+ u v)))))
+#+end_example
+
+Wisp turns indentation based syntax into Lisp. The conversion is homoiconic[fn:1], generic[fn:2], and backwards-compatible[fn:3]. It is inspired by [[http://readable.sourceforge.net/][project readable]], but tries to keep itself simple (and stupid: just add parens for indentation).
+
+This repository is the *Racket port* of wisp: it provides =#lang wisp=. The code lives at [[https://github.com/masukomi/wisp-racket][github.com/masukomi/wisp-racket]].
+
+More information is available on the *[[http://draketo.de/english/wisp][wisp-website]]*, and the original Guile Scheme implementation in the official [[http://hg.sr.ht/~arnebab/wisp][wisp-repository]].
+
+For a short presentation, see [[file:why-wisp.html][Why Wisp?]]
+
+Note that this is full-fledged scheme, with all its capabilities like
+hygienic macros (programmable syntax!) and full tail recursion.
+
+** Requirements
+:PROPERTIES:
+:CUSTOM_ID: requirements
+:END:
+- [[https://racket-lang.org][Racket]] 8 or later (developed and tested against Racket 9.3). The
+  =racket= and =raco= commands must be on your =PATH=; on macOS they are in
+  =/Applications/Racket/bin=.
+
+Nothing else is needed: there is no bootstrap step, the parser is plain
+Racket.
+
+** Setup
+:PROPERTIES:
+:CUSTOM_ID: setup
+:END:
+Get wisp-racket and install it as a linked Racket package:
+
+#+begin_example
+git clone https://github.com/masukomi/wisp-racket
+cd wisp-racket
+raco pkg install --auto --name wisp --link "$(pwd)"
+#+end_example
+
+Note: it's important to include the =--name wisp= in that. Without it the package would be named after the clone directory (=wisp-racket=), which would be confusing next to the wisp collection it provides. This repo is named =wisp-racket= to help differentiate it from the other wisp repos.
+
+After that =#lang wisp= should now work in any file on your
+machine. Because the package is linked rather than copied, a =git pull=
+in the clone updates the installed language too.
+
+*** Install scope
+:PROPERTIES:
+:CUSTOM_ID: install
+:END:
+=raco pkg install= installs for your user account by default, and only
+for the Racket version you ran it with. To install for every user on the
+machine add =--scope installation= (you may need =sudo= if Racket lives in
+a system directory). After upgrading Racket, run =raco pkg migrate
+<old-version>= to carry your user packages over.
+
+To uninstall: =raco pkg remove wisp=.
+
+*** More
+:PROPERTIES:
+:CUSTOM_ID: more
+:END:
+Run the tests with =raco test .= from the clone. This runs the ported
+upstream test suite (=tests/upstream-test.rkt=, every =.w= file in
+=tests/upstream/= must parse to the same data as its =.scm= partner) and
+the tests for behaviour specific to the Racket port (=tests/parse-test.rkt=).
+
+Check that the package declares all its dependencies with
+=raco setup --check-pkg-deps --pkgs wisp=.
+
+** Usage
+:PROPERTIES:
+:CUSTOM_ID: usage
+:END:
+- Write a module: put =#lang wisp= on the first line and run it with
+  =racket=. The file extension does not matter to Racket; =.rkt= and =.w=
+  both work.
+
+  #+begin_example
+  #lang wisp
+
+  define : hello name
+    display : string-append "Hello " name
+    newline
+
+  hello "World"
+  #+end_example
+
+  #+begin_example
+  racket hello.w
+  #+end_example
+
+  The code is read as wisp and then expands as =racket=, so everything
+  =#lang racket= provides is available, including =require= and =provide=.
+
+- Use it without installing: replace the =#lang= line with
+  =#reader(file "/path/to/wisp-racket/lang/reader.rkt")=.
+
+- Preprocess files (the equivalent of upstream's =wisp2lisp=):
+
+  #+begin_example
+  racket -e '(require wisp) (for-each writeln (wisp-scheme-read-file "infile.w"))' > outfile.scm
+  #+end_example
+
+- Go the other way, from Racket to wisp, with =racket2wisp.w= (itself
+  written in wisp). Comments are kept, each form keeps its source
+  layout, and the result reads back to the same data:
+
+  #+begin_example
+  racket racket2wisp.w infile.rkt > outfile.w
+  racket racket2wisp.w -o outfile.w infile.rkt
+  #+end_example
+
+  Flags go before the file name. =--no-comments= uses the Racket
+  reader instead of the lexer (and then guesses the layout),
+  =--indent N= and =--width N= set the indentation and the target line
+  width. A =#lang= line other than =racket= is rewritten to =#lang wisp=
+  with a warning, since wisp modules always expand as =racket=. From
+  Racket, =(require wisp/racket2wisp)= is not available (the file is
+  not compiled by =raco setup=); =require= it by path instead and call
+  =racket->wisp= on a string or =file->wisp= on a path.
+
+- Parse wisp as data from Racket: =(require wisp)= gives you
+  =wisp-scheme-read-string=, =wisp-scheme-read-file= and
+  =wisp-scheme-read-all= (on a port), each returning a list of the
+  top-level forms.
+
+- Embed wisp in a =#lang racket= module with the =literal-wisp= macro,
+  which takes string literals and splices in the parsed forms:
+
+  #+begin_example
+  #lang racket
+  (require wisp)
+  (literal-wisp "define : twice x\n  * 2 x\n")
+  (twice 21) ; => 42
+  #+end_example
+
+- There is no wisp REPL yet: =racket -i= reads ordinary Racket syntax.
+  You can still =(require "hello.w")= from the REPL to load a wisp
+  module.
+
+** Wisp and curly infix (SRFI-105)
+:PROPERTIES:
+:CUSTOM_ID: wisp-and-curly-infix-srfi-105
+:END:
+Wisp treats braces “{}” the same as parentheses “()” and square brackets
+“[]”, so you can use it with curly infix
+([[http://srfi.schemers.org/srfi-105/srfi-105.html][SRFI-105]]) to get
+more customary math expressions. As in Guile, curly infix is activated by
+default inside wisp files - as shown in the [[#fibonacci][Fibonacci]]
+example: ={a op b op c}= reads as =(op a b c)=, ={x}= as =x=, and an
+expression with mixed operators as =($nfx$ ...)=.
+
+Two limitations of the Racket port: neoteric calls such as =f(x)= inside
+braces are not supported (Racket's reader sees two datums there), and the
+=#!curly-infix= directive is accepted but has no effect since curly infix
+is always on.
+
+If you want to use a curly-infix expression starting a line, you have to
+prefix it with a dot:
+
+#+begin_example
+. {1 + 1}
+; = 2
+#+end_example
+
+** Differences from the Guile implementation
+:PROPERTIES:
+:CUSTOM_ID: differences
+:END:
+- Error locations point at the top-level form a problem is in, not the
+  exact line and column inside it.
+- There is no syntax colouring or indentation support for DrRacket.
+- A colon that should stay a symbol is written =\:= or =|:|=, as upstream;
+  an unescaped =:= is always the inline-colon operator.
+
+** License
+:PROPERTIES:
+:CUSTOM_ID: license
+:END:
+Upstream, wisp as a project is licensed under the *GPLv3 or later*, while
+the implementation of wisp as language and implementation of [[https://srfi.schemers.org/srfi-119/srfi-119.html][SRFI-119]] as well as the tests and supporting files are licensed under the lax *expat-license*.
+
+This repository only contains the expat-licensed parts: the parser
+(=parse.rkt=, ported from =wisp-scheme.w=), the tests in =tests/upstream/=,
+and this README. The Racket-specific files (=main.rkt=, =lang/reader.rkt=,
+=info.rkt=, =tests/*.rkt=) are under the same expat (MIT) license.
+
+** Notes
+:PROPERTIES:
+:CUSTOM_ID: notes
+:END:
+Standardization: Wisp is standardized as
+[[http://srfi.schemers.org/srfi-119/][SRFI 119]][fn:4][fn:5].
+
+Copyright: 2013--2021 Arne Babenhauserheide
+
+License: expat (MIT) for everything in this repository; see above.
+
+** Racket Port
+This repository is an automated port of the official Guile Scheme repo performed by Anthropic's Claude using the Fable 5.1 model. If you're not cool with that, don't blame Arne. He had nothing to do with it.
+
+The parser tracks =wisp-scheme.w= from wisp 1.0.12. Bugs in the port
+belong at [[https://github.com/masukomi/wisp-racket/issues][github.com/masukomi/wisp-racket/issues]], not with upstream.
+
+* Footnotes
+
+[fn:1] Wisp is homoiconic because everything you write gets turned into
+       lisp which is homoiconic.
+
+[fn:2] Wisp is generic, because it works for any language which uses
+       brackets to start a function call - which is true for most lisps.
+       You simply get rid of the speerwall of parentheses without losing
+       their power.
+
+[fn:3] Wisp is backwards compatible, because you can use arbitrary lisp
+       code in wisp: Indentation processing skips expressions in
+       brackets.
+
+[fn:4] SRFI is the abbreviation of Scheme Request for Implementation. It
+       is the official schemisch way of suggesting new features. SRFIs
+       are maintained at
+       [[http://srfi.schemers.org/][srfi.schemers.org/]].
+
+[fn:5] It is “A SRFI”, not “An SRFI”, because SRFI is spoken as “surfie”
+       and as such its spoken form does not begin with a vowel.
+
